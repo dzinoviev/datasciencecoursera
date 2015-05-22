@@ -1,0 +1,86 @@
+---
+title: "Automatic or Manual?"
+author: "Dmitry Zinoviev"
+date: "05/22/2015"
+output: pdf_document
+---
+
+# Executive Summary
+For a given class of cars (as defined, in the first place, by the weight and the quarter mile time), an automatic transmission improves the car performance by 3.1 MPG (*p*=.035) with the standard error of 1.4 MPG, compared to a manual transmission.
+
+# Data Set
+In addition to the car performance MPG and the transmission type am, the data set has another nive variables that could affect the relationship: number of cylinders, engine displacement, power, final drive ration, weight, quarter mile time, engine shape, number of speeds, and number of carburetor barrels.
+
+The look at heatmap of the correlations between the variables (see Appendix) clearly indicates the presense of two clusters: "mostly engine" (carb, hp, wt, disp, and cyl) and "mostly transmission" (gear, am, drat, mpg, vs, qsec). (*The names are fictitious.*) The car performance MPG and the transmission type *am* are in the same cluster and, therefore, at least somewhat correlated.
+
+A good model would use at least one regressor (and as few as possible regressors) from each cluster.
+
+# Null Models
+```{r, echo=FALSE}
+data (mtcars)
+mtcars = mtcars[rownames(mtcars) != "Merc 240D",]
+fit0 <- lm (mpg ~ am, mtcars)
+fit.all <- lm (mpg ~ am + wt + qsec + wt + drat + gear + disp + cyl + carb + hp, mtcars)
+```
+The null model directly compares MPG and the transmission type. According to the model, a car with auto transmission goes `r fit0$coefficients[2]`*** more miles per gallon than a car with manual transmission. However, the R2 of the model is low (`r summary(fit0)$r.square`) meaning that a lot of variance is left unexplained.
+
+Yet another null model uses all variables in the data set as regressors. This model, on one hand, predicts a smaller effect of the transmission type on the performance (`r fit.all$coefficients[2]` MPG, *p*=0.15) and explains more variance (R2=`r summary(fit.all)$r.square`). On the other hand, all coefficients in the model, except for the vehicle weight, are statistically insignificant.
+
+# Refined Models
+Since the number of variables in the set is small, my approach is to add to the models one variable at a time, incrementally. I the use ANOVA to eliminate the variables that produce the most similar models (with the high values of *p*) and identify the variables that produce the least similar models (with the lowest value of *p*).
+
+```{r,echo=FALSE}
+eliminate <- function (var) {
+  model <- lm (paste ("mpg ~ am + ", var), mtcars)
+  c (anova (fit0, model)$"Pr(>F)"[2], var)
+}
+ms <- lapply (setdiff (names (mtcars), c ("mpg", "am")), eliminate)
+```
+
+The final drive ratio and the number of speeds, if added to the original model, result in the highest *p* values. The best candidate variables are weight and engine displacement.
+
+```{r,echo=FALSE}
+fit1 <- lm (mpg ~ am + wt, mtcars)
+eliminate <- function (var) {
+  model <- lm (paste ("mpg ~ am + wt + ", var), mtcars)
+  c (anova (fit1, model)$"Pr(>F)"[2], var)
+}
+ms <- lapply (setdiff (names (mtcars), c ("mpg", "am", "wt", "drat", "gear")), eliminate)
+```
+
+The new model uses the transmission type and the weight as the regressors. According to the model, the transmission type is not significant anymore (the coefficient is only `r fit1$coefficients[2]` MPG, *p*=.779). The R2 of the model improved a lot (`r summary(fit1)$r.square`).
+
+With six more variables unexplored, I repeat the procedure described above: add one variable at a time to the adjusted model and compare the adjusted and the twice adjusted models for similarity. The engine displacement has the lowest effect no the model (ANOVA *p*=.12), which is not surprising, given the `r cor(mtcars$disp,mtcars$wt)` correlation between the displacement and the weight (which is already in the model).
+
+The most different twice adjusted model is the model that also includes quarter mile time (qsec) as a regressor (ANOVA *p*=.0004).
+
+```{r,echo=FALSE}
+fit2 <- lm (mpg ~ am + wt + qsec, mtcars)
+eliminate <- function (var) {
+  model <- lm (paste ("mpg ~ am + wt + qsec + ", var), mtcars)
+  c (anova (fit2, model)$"Pr(>F)"[2], var)
+}
+ms <- lapply (setdiff (names (mtcars), c ("mpg", "am", "wt", "drat", "gear", "qsec", "disp")), eliminate)
+fit3 <- lm (mpg ~ am + wt + qsec + carb, mtcars)
+```
+
+The final model M uses the type of transmission, the weight, and the quarter mile time as the regressors. It has a considerably improved R2 of `r summary(fit2)$r.square`. The remaining four variables (number of cylinders, engine power, engine shape, and number of barrels), if added to M, produce models that are statistically indistinguishable from M (ANOVA *p*>.2). 
+
+In support of this statement, I add the most powerful variable, the number of barrels, to M and build another model M'. Not only M' has lower R2 (`r summary(fit3)$r.square`), but the coefficient for the added regressor *carb* is statistically insignificant, too (*p*=.2).
+
+# Results
+According to the model M, there is a non-insifnificant (*p*=.035) effect of the transmission type on the car performance. The coefficient for the transmission type is `r fit2$coefficients[2]`*, which means that for the fixed vehicle weight and quarter mile time (and all other variables correlated with them), a car with a manual transmission goes `r fit2$coefficients[2]` fewer miles per one gallon of gasoline than a car with an automatic transmission.
+
+The residual plot for the model is in the Appendix.
+
+The proposed model is better than either of the null models: it explains almost as much variance as the second model and predicts almost the same the effect of the transmission type on the car performance, but uses fewer regressors and gives more accurate estimates of their coefficients.
+
+# Appendix
+```{r,echo=FALSE}
+heatmap (cor (mtcars), main = "Correlations between the Data Set Variables")
+```
+
+```{r,echo=FALSE}
+plot (mtcars$am, resid (fit2), xlab = "Transmission type",
+      ylab = "MPG Residuals", main = "Residuals for the Model M")
+```

@@ -71,7 +71,7 @@ In support of this statement, I add the most powerful variable, the number of ba
 # Results
 According to the model M, there is a non-insifnificant (*p*=.035) effect of the transmission type on the car performance. The coefficient for the transmission type is `r fit2$coefficients[2]`*, which means that for the fixed vehicle weight and quarter mile time (and all other variables correlated with them), a car with a manual transmission goes `r fit2$coefficients[2]` fewer miles per one gallon of gasoline than a car with an automatic transmission.
 
-The residual plot for the model is in the Appendix.
+The residual plot for the model is in the Appendix. The residuals have a reasonably normal distribution, at least within $\pm\sigma$, as illustrated by the Q-Q plot in the Appendix.
 
 The proposed model is better than either of the null models: it explains almost as much variance as the second model and predicts almost the same the effect of the transmission type on the car performance, but uses fewer regressors and gives more accurate estimates of their coefficients.
 
@@ -83,4 +83,9 @@ heatmap (cor (mtcars), main = "Correlations between the Data Set Variables")
 ```{r,echo=FALSE}
 plot (mtcars$am, resid (fit2), xlab = "Transmission type",
       ylab = "MPG Residuals", main = "Residuals for the Model M")
+```
+
+```{r,echo=FALSE}
+qqnorm (resid (fit2), main = "Normal Q-Q Plot for the Model M Residuals")
+qqline (resid (fit2), col = "red")
 ```

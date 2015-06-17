@@ -1,5 +1,7 @@
 library (dplyr)
-PREFIX <- "UCI HAR Dataset"
+
+# The location of the UCI data
+PREFIX <- "." # UCI HAR Dataset"
 
 # Read in the raw data
 x.test <- read.table(paste(PREFIX,"/test/X_test.txt",sep=""))

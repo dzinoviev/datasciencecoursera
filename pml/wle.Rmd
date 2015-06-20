@@ -1,0 +1,129 @@
+---
+title: "Predicting Weight Lifting Activities"
+author: "Dmitry Zinoviev"
+date: "06/19/2015"
+output: html_document
+---
+
+```{r,echo=FALSE,message=FALSE}
+library(doParallel)
+cl <- makeCluster(3)
+registerDoParallel(cl)
+
+library(caret)
+library(dplyr)
+```
+
+## Introduction
+
+The goal of the project is to use machine learning tools to predict the correctness of weight lifting activities, based on the data collected from the accelerometers  on the belt, forearm, arm, and dumbell of the experiment participants.
+
+## Data Set
+```{r,echo=FALSE,cache=TRUE}
+set.seed (1000)
+NA.STRINGS <- c ("NA","","#DIV/0!")
+testing <- read.csv ("pml-testing.csv", na.strings = NA.STRINGS)
+training <- read.csv ("pml-training.csv", na.strings = NA.STRINGS)
+testing$classe <- 0
+```
+The data set consists of two CSV files: *pml-training.csv* (`r (dim(training)[1])` lines) and *pml-testing.csv* (`r (dim(testing)[1])` lines). The training data set has `r (dim(training)[2])` variables, the testing dataset does not have the outcome variable *classe*. I added an empty column *classe* to the testing data set for consistency.
+
+Many values in the data set are not available and coded as _NA_, _#DVI/0!_ or an empty string in the CSV files.
+
+## Predictor Selection
+When selecting predictors, I considered three reasons for eliminating a variable from the predictore set:
+
+```{r,echo=FALSE}
+testing.1 <- select (testing, roll_belt:magnet_forearm_z, classe)
+training.1 <- select (training, roll_belt:magnet_forearm_z, classe)
+```
+
+- If a variable identifies (rather than describes) the participant, the task or a sample, it has to be eliminated. The variables *X* and *user_name* identify the participants. The variables *xxx_timestamp*, *new_window*,  and *num_window* identify individual samples. The variable *problem_id* identifies the task. The training data set has `r (dim(training.1)[2])` variables after the first selection stage.
+
+```{r,echo=FALSE,cache=TRUE}
+nna <- lapply (training.1, function (x) sum (is.na (x)))
+nav <- (nna == 0)
+training.2 <- training.1[nav]
+testing.2 <- testing.1[nav]
+```
+
+- If a variable has too many NAs, it has to be eliminated. There are only two types of variables in the data sets: those that have no NAs and those that have many NAs. I eliminated all variables that have NAs. The training data set has `r dim(training.2)[2]-1` variables after the second selection stage.
+
+```{r,echo=FALSE}
+hist (as.numeric (nna), main = "NAs by variables", xlab = "# of NAs")
+```
+
+```{r,echo=FALSE,cache=TRUE}
+nzv <- nearZeroVar (training.2)
+if (length (nzv > 0)) {
+  training.2 <- training.2[-nzv]
+  testing.2 <- testing.2[-nzv]
+}
+```
+- Finally, if a variable has near zero variance, it has to be eliminated. The WLE data sets do not have any near zero variance variables. The total number of predictors, therefore, is `r dim(training.2)[2]-1`.
+
+## Partitioning the Data
+
+```{r,echo=FALSE}
+THRESHOLD = 0.7
+inTrain <- createDataPartition (y = training.2$classe, p = THRESHOLD, list = FALSE)
+quiz.3 <- training.2[-inTrain,]
+training.3 <- training.2[inTrain,]
+```
+
+I partitioned the training data into two sets: the proper training set (`r dim(training.3)[1]` samples, `r THRESHOLD`%) and the "quiz" set (`r dim(quiz.3)[1]` samples). The latter set will be used for cross-validation.
+
+## Preprocessing the Data
+
+I considered the following preprocessing techniques:
+
+- normalizing (scaling and centering)
+- covariance elimination.
+
+Some of the variables in the data set are strongly correlated, as seen on the heatmap (bright yellow squares mainly at the anti-diagonal):
+
+```{r,echo=FALSE}
+heatmap (cor (select (training.3, -classe)))
+```
+
+If the model training process took significant time, I would eliminate some of the strongly correlated variables (at the expense of the model accuracy). However, the training time turned out to be quite modest, and the correlated variables were not removed.
+
+Normalization of the variables did not improve the accuracy of the model, which is not surprizing, since the *random forest* model that I chose for prediction is insensitive to linear trasformations.
+
+## Building and Training the Model 
+```{r,cache=TRUE,echo=FALSE,message=FALSE}
+ptm.start <- proc.time()
+fit <- train (classe ~ ., data = training.3, method = "rf",
+             trControl = trainControl (method = "cv"))
+ptm.stop <- proc.time()
+```
+I used the *random forest* model with `r dim(training.3)[2]-1` predictors.
+
+The choice of the model is driven by the fact that the predicted variable *classe* is a factor with five levels. It would be possible to model it as five binary variables in five generalized linear models, but this would require much longer training time and lead to possible conflicts if different models predict different outcomes.
+
+I used the package *caret* to train and evaluate the model. It took `r round(ptm.stop["elapsed"]-ptm.start["elapsed"],0)` sec to train the random forest on a 4-core AMD Phenom II X4 955 Processor with 8GB of RAM running Linux OS. (Only 3 cores were used for training.)
+
+The plot shows the most important variables after training (top to bottom).
+
+```{r,echo=FALSE,message=FALSE}
+library(randomForest)
+varImpPlot (fit$finalModel,
+            main  ="Most important variables in the final random forest", cex = 0.8)
+```
+
+## Cross-Validation
+```{r,echo=FALSE}
+prediction <- predict (fit, newdata = quiz.3)
+cm <- confusionMatrix (quiz.3$classe, prediction)
+```
+For the purpose of cross-validation, I used the fitted model to predict the values of *crosse* for the quiz data set and built a confusion matrix.
+```{r,echo=FALSE}
+cm$table
+```
+
+The accuracy of the prediction is `r round(cm$overall["Accuracy"]*100,1)`%, and the *kappa* parameter is `r round(cm$overall["Kappa"],3)`. The high value of accuracy suggests that the out of sample error is expected to be low.
+
+The prediction for the Class C outcomes has the lowest sensitivity. This is a reason to have less trust in the predicted Class C outcomes.
+```{r,echo=FALSE}
+(cm$byClass)[,"Sensitivity"]
+```
